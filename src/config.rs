@@ -2,27 +2,52 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-pub struct test {
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TimerConfig {
     pub interval: String,
     pub keep_last: u16
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct XtrabackupEncryptConfig {
-    pub enabled: bool,
     pub key_file: String,
     pub threads: Option<u8>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct MySQLBackupConfig {
+pub struct XtraBackupIncrementalConfig {
+    pub enabled: bool,
+    pub basedir: String
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct XtraBackupConfig {
     pub encrypt: Option<XtrabackupEncryptConfig>,
+    pub incremental: Option<XtraBackupIncrementalConfig>,
+    pub parallel_threads: Option<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MySQLDump {
+    //
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum MySQLBackupType {
+    xtrabackup(XtraBackupConfig),
+    mysqldump(MySQLDump)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MySQLBackupConfig {
+    #[serde(flatten)]
+    pub backup_type: MySQLBackupType,
     pub databases: Option<Vec<String>>,
     pub databases_exclude: Option<Vec<String>>,
-    pub incremental: Option<bool>,
-    pub incremental_basedir: Option<String>,
-    pub parallel_threads: Option<u8>,
-    pub rsync: Option<bool>
+    #[serde(flatten)]
+    pub timer: TimerConfig
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,7 +56,8 @@ pub struct MySQLConnectionConfig {
     pub port: Option<u16>,
     pub username: Option<String>,
     pub password: Option<String>,
-    pub defaults_file: Option<String>
+    pub defaults_file: Option<String>,
+    pub backup: Option<MySQLBackupConfig>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -41,21 +67,10 @@ pub enum ServiceConfigEnum {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
-pub enum BackupConfigEnum {
-    MySQL(MySQLBackupConfig)
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct BackupConfig {
-    pub basedir: String,
-    pub services: HashMap<String, BackupConfigEnum>
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
+    pub backup_basedir: String,
+    #[serde(flatten)]
     pub services: HashMap<String, ServiceConfigEnum>,
-    pub backup: BackupConfig,
 }
 
 impl Config {

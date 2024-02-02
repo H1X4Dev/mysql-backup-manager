@@ -6,6 +6,7 @@ use sqlx::FromRow;
 #[derive(Debug, Serialize, FromRow)]
 pub struct Backup {
     uuid: Uuid,
+    /*
     #[sqlx(rename = "type")]
     backup_type: String,
     path: Option<String>,
@@ -16,5 +17,5 @@ pub struct Backup {
 
     incrbase: NaiveDateTime,
     weekno: u8,
-    baseid: i32,
+    baseid: i32,*/
 }

@@ -1,28 +1,23 @@
-[services.mysql-r1]
+backup_basedir = ""
+
+[mysql-r1]
 type = "MySQL"
 host = "127.0.0.1"
 port = 3306
 username = "root"
 password = "123456"
 
-[services.mysql-r3]
-type = "MySQL"
-defaults_file = "/etc/mysql/default3.conf"
-
-[services.mysql-r2]
-type = "MySQL"
-defaults_file = "/etc/mysql/default2.conf"
-
-[backup]
-basedir = "/opt/backup"
-
-[backup.services.mysql-r1]
-type = "MySQL"
+[mysql-r1.backup]
+type = "xtrabackup"
+interval = "* * * * *"
+keep_last = 7
 databases = ["auth", "wordpress"]
-incremental = true
-incremental_basedir = "/etc/mysql/incremental"
+parallel_threads = 16
 
-[backup.services.mysql-r1.encrypt]
-enabled = true
+[mysql-r1.backup.encrypt]
 key_file = "/etc/mysql/backup.key"
 threads = 16
+
+[mysql-r1.backup.incremental]
+enabled = true
+basedir = "/home"
