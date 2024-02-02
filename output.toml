@@ -1,0 +1,28 @@
+[services.mysql-r1]
+type = "MySQL"
+host = "127.0.0.1"
+port = 3306
+username = "root"
+password = "123456"
+
+[services.mysql-r3]
+type = "MySQL"
+defaults_file = "/etc/mysql/default3.conf"
+
+[services.mysql-r2]
+type = "MySQL"
+defaults_file = "/etc/mysql/default2.conf"
+
+[backup]
+basedir = "/opt/backup"
+
+[backup.services.mysql-r1]
+type = "MySQL"
+databases = ["auth", "wordpress"]
+incremental = true
+incremental_basedir = "/etc/mysql/incremental"
+
+[backup.services.mysql-r1.encrypt]
+enabled = true
+key_file = "/etc/mysql/backup.key"
+threads = 16
