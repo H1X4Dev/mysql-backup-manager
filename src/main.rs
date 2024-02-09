@@ -8,7 +8,9 @@ mod database;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config {
-        backup_basedir: "".to_string(),
+        backup: BackupConfig {
+            basedir:  "".to_string()
+        },
         services: HashMap::from([
              ("mysql-r1".to_string(), ServiceConfigEnum::MySQL(MySQLConnectionConfig {
                 host: Some("127.0.0.1".to_string()),

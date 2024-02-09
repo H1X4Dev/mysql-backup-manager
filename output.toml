@@ -1,4 +1,5 @@
-backup_basedir = ""
+[backup]
+basedir = ""
 
 [mysql-r1]
 type = "MySQL"

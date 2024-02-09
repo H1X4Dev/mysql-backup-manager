@@ -67,8 +67,13 @@ pub enum ServiceConfigEnum {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct BackupConfig {
+    pub basedir: String
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    pub backup_basedir: String,
+    pub backup: BackupConfig,
     #[serde(flatten)]
     pub services: HashMap<String, ServiceConfigEnum>,
 }
