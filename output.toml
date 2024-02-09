@@ -9,10 +9,10 @@ password = "123456"
 
 [mysql-r1.backup]
 type = "xtrabackup"
+parallel_threads = 16
+databases = ["auth", "wordpress"]
 interval = "* * * * *"
 keep_last = 7
-databases = ["auth", "wordpress"]
-parallel_threads = 16
 
 [mysql-r1.backup.encrypt]
 key_file = "/etc/mysql/backup.key"

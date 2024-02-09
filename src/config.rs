@@ -77,6 +77,35 @@ impl Config {
     pub async fn new(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
         let config_str = fs::read_to_string(path).await?;
         let config: Config = toml::from_str(&config_str)?;
+        config.validate()?;
         Ok(config)
+    }
+
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        for service in self.services.values() {
+            if let ServiceConfigEnum::MySQL(mysql_config) = service {
+                // Check 1: If defaults_file is specified, other connection options should not be.
+                if mysql_config.defaults_file.is_some() {
+                    let other_options = [ &mysql_config.username, &mysql_config.password, &mysql_config.host ];
+                    if other_options.iter().any(|option| option.is_some()) {
+                        return Err("If defaults_file is specified, username, password, host, and port must not be set.".into());
+                    }
+
+                    // Check the port option separately
+                    if mysql_config.port.is_some() {
+                        return Err("If defaults_file is specified, port must not be set.".into());
+                    }
+                }
+
+                // Check 2: If xtrabackup is selected, ensure it's not on Windows.
+                if let Some(MySQLBackupConfig { backup_type: MySQLBackupType::xtrabackup(_), .. }) = &mysql_config.backup {
+                    if cfg!(target_os = "windows") {
+                        return Err("xtrabackup is not supported on Windows platforms.".into());
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
