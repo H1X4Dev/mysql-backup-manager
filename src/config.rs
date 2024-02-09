@@ -114,3 +114,103 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Read;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_serialization() {
+        let config = create_sample_config();
+        let serialized = toml::to_string(&config).unwrap();
+        assert!(serialized.contains("[backup_basedir]"));
+    }
+
+    #[tokio::test]
+    async fn test_deserialization() {
+        let toml_str = r#"
+[backup]
+basedir = "/srv"
+
+[mysql-r1]
+type = "MySQL"
+host = "127.0.0.1"
+port = 3306
+username = "root"
+password = "123456"
+
+[mysql-r1.backup]
+type = "xtrabackup"
+parallel_threads = 16
+databases = ["auth", "wordpress"]
+interval = "* * * * *"
+keep_last = 7
+
+[mysql-r1.backup.encrypt]
+key_file = "/etc/mysql/backup.key"
+threads = 16
+
+[mysql-r1.backup.incremental]
+enabled = true
+basedir = "/home"
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.backup.basedir, "/srv");
+        assert_eq!(config.services.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_file_io() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("output.toml");
+        let config = create_sample_config();
+
+        let serialized = toml::to_string(&config).unwrap();
+        fs::write(&file_path, serialized).unwrap();
+
+        let mut file = fs::File::open(file_path).unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+
+        assert!(contents.contains("[backup]"));
+    }
+
+    fn create_sample_config() -> Config {
+        Config {
+            backup: BackupConfig {
+                basedir:  "".to_string()
+            },
+            services: HashMap::from([
+                ("mysql-r1".to_string(), ServiceConfigEnum::MySQL(MySQLConnectionConfig {
+                    host: Some("127.0.0.1".to_string()),
+                    port: Some(3306),
+                    username: Some("root".to_string()),
+                    password: Some("123456".to_string()),
+                    defaults_file: None,
+                    backup: Some(MySQLBackupConfig {
+                        backup_type: MySQLBackupType::xtrabackup(XtraBackupConfig {
+                            encrypt: Some(XtrabackupEncryptConfig {
+                                key_file: "/etc/mysql/backup.key".to_string(),
+                                threads: Some(16),
+                            }),
+                            incremental: Some(XtraBackupIncrementalConfig {
+                                enabled: true,
+                                basedir: "/home".to_string()
+                            }),
+                            parallel_threads: Some(16),
+                        }),
+                        databases: Some(vec!["auth".to_string(), "wordpress".to_string()]),
+                        databases_exclude: None,
+                        timer: TimerConfig {
+                            interval: "* * * * *".to_string(),
+                            keep_last: 7,
+                        }
+                    }),
+                }))
+            ])
+        }
+    }
+}
