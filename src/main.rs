@@ -4,6 +4,7 @@ use crate::config::*;
 
 mod config;
 mod database;
+mod service;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
