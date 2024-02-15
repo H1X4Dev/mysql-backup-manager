@@ -1,16 +1,24 @@
-[mysql.localhost]
+[backup]
+basedir = ""
+
+[mysql-r1]
+type = "MySQL"
 host = "127.0.0.1"
 port = 3306
-defaults_file = "/etc/mysql/backup.cnf"
+username = "root"
+password = "123456"
 
-[backup]
-dir = "/srv/backup"
+[mysql-r1.backup]
+type = "mysqldump"
+parallel_threads = 16
+databases = ["auth", "wordpress"]
+interval = "* * * * *"
+keep_last = 7
 
-[backup.mysql.localhost]
-encrypt = { enabled = true, key-file = "", threads = 8 }
-databases = []
-databases-exclude = []
-incremental = true
-incremental-basedir = ""
-parallel_threads = 8
-rsync = false
+[mysql-r1.backup.encrypt]
+key_file = "/etc/mysql/backup.key"
+threads = 16
+
+[mysql-r1.backup.incremental]
+enabled = true
+basedir = "/home"

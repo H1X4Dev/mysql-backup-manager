@@ -113,6 +113,12 @@ impl Config {
 
         Ok(())
     }
+
+    pub async fn save(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let result = toml::to_string(self)?;
+        fs::write("output.toml", result).await?;
+        return Ok(())
+    }
 }
 
 #[cfg(test)]
