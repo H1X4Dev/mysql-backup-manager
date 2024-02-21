@@ -18,5 +18,5 @@ Cargo.lock
 
 
 # Added by cargo
-
+sqlite.db
 /target

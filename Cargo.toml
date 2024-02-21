@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-rustls", "chrono", "uuid" ] }
+sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-rustls", "chrono", "uuid", "sqlite" ] }
 uuid = { version = "1.7.0", "features" = [ "v7", "serde" ] }
 tokio = { version = "1.36.0", features = ["full"] }
 toml = "0.8.11"
@@ -14,3 +14,4 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tempfile = "3.10.1"
 async-trait = "0.1.78"
+env_logger = "0.11.3"
