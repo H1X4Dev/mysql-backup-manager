@@ -13,6 +13,7 @@ const DB_URL: &str = "sqlite://sqlite.db?mode=rwc";
 
 #[tokio::main]
 async fn main() -> Result<(), i32> {
+    env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
     // Fetch the current path
