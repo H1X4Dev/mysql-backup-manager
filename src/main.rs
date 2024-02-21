@@ -1,3 +1,4 @@
+use std::env;
 use std::path::Path;
 use log::{error, info};
 use sqlx::Sqlite;
@@ -14,8 +15,29 @@ const DB_URL: &str = "sqlite://sqlite.db?mode=rwc";
 async fn main() -> Result<(), i32> {
     env_logger::init();
 
+    // Fetch the current path
+    let current_path = if env::var("RUST_ENV") == Ok("production".to_string()) {
+        match env::current_exe() {
+            Ok(path) => path,
+            Err(error) => {
+                error!("Failed to fetch path. Error: {}", error);
+                return Err(-1)
+            }
+        }
+    } else {
+        let create_dir = match env::var("CARGO_MANIFEST_DIR") {
+            Ok(path) => path,
+            Err(error) => {
+                error!("Failed ot fetch manifest dir. Error: {}", error);
+                return Err(-1)
+            }
+        };
+        Path::new(&create_dir).to_path_buf()
+    };
+
     // Read the configuration
-    let config = match Config::new("config.toml").await {
+    let config_path = current_path.clone().join("config.toml");
+    let config = match Config::new(config_path.to_str().unwrap()).await {
         Ok(config) => config,
         Err(error) => {
             error!("An error occurred while parsing config: {}", error);
@@ -33,7 +55,8 @@ async fn main() -> Result<(), i32> {
     };
 
     // Migrate the database
-    let result = match sqlx::migrate::Migrator::new(Path::new("./migrations")).await {
+    let migrations_path = current_path.clone().join("migrations");
+    let result = match sqlx::migrate::Migrator::new(migrations_path).await {
         Ok(m) => m.run(&pool).await,
         Err(error) => {
             error!("An error occurred while initializing migrations: {}", error);
