@@ -3,24 +3,24 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 use crate::service::mysql::config::{MySQLBackupConfig, MySQLBackupType, MySQLConnectionConfig};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum ServiceConfigEnum {
     MySQL(MySQLConnectionConfig)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TimerConfig {
     pub interval: String,
     pub keep_last: u16
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BackupConfig {
     pub basedir: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub backup: BackupConfig,
     #[serde(flatten)]

@@ -1,10 +1,17 @@
 use std::env;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use log::{error, info};
 use sqlx::Sqlite;
 use sqlx::sqlite::SqlitePoolOptions;
 use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 use crate::config::*;
+use crate::service::mysql::config::MySQLConnectionConfig;
+use crate::service::mysql::mysql_service::MySQLService;
+use crate::service::service::Service;
+use tokio::signal::ctrl_c;
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
 
 mod config;
 mod service;
@@ -74,10 +81,81 @@ async fn main() -> Result<(), i32> {
         }
     };
 
-    info!("config: {:?}", config);
-    info!("pool: {:?}", pool);
+    // Now we simply iterate all services and start handling them.
+    let mut sched = match JobScheduler::new().await {
+        Ok(scheduler) => scheduler,
+        Err(error) => {
+            error!("An error occurred while creating scheduler: {}", error);
+            return Err(-1)
+        }
+    };
+    sched.set_shutdown_handler(Box::new(|| {
+        Box::pin(async move {
+            info!("Shutting down scheduler.")
+        })
+    }));
 
-    // Now we will need a way to iterate all used services and schedule their job.
+    // Schedule the service.
+    for (service_name, service_config) in config.services {
+        info!("Scheduling {}", service_name);
 
+        match service_config {
+            ServiceConfigEnum::MySQL(mysql_config) => {
+                let mysql_service = Arc::new(Mutex::new(MySQLService::new(mysql_config)));
+                let mut mysql_service_mutex = mysql_service.lock().unwrap();
+                match mysql_service_mutex.schedule(&mut sched, &service_name).await {
+                    Ok(_) => (),
+                    Err(error) => {
+                        error!("Failed to schedule MySQL task. Error: {}", error);
+                        return Err(-1)
+                    }
+                };
+            }
+        }
+    }
+
+    // Start the scheduler.
+    match sched.start().await {
+        Ok(_) => (),
+        Err(error) => {
+            error!("Failed to start the scheduler due to error: {}", error);
+            return Err(-1)
+        }
+    };
+
+    // Create a future for handling the Ctrl+C signal (SIGINT)
+    let ctrl_c_future = ctrl_c();
+
+    #[cfg(unix)]
+    {
+        // Create a signal receiver for SIGTERM (Unix only)
+        let sigterm_future = signal(SignalKind::terminate())?;
+
+        // Wait for either Ctrl+C or SIGTERM signal
+        tokio::select! {
+            _ = ctrl_c_future => {
+                info!("Received Ctrl+C signal, shutting down gracefully...");
+            }
+            _ = sigterm_future.recv() => {
+                info!("Received SIGTERM signal, shutting down gracefully...");
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        // Wait for the Ctrl+C signal (Windows and other platforms)
+        ctrl_c_future.await.unwrap();
+        info!("Received Ctrl+C signal, shutting down gracefully...");
+    }
+
+    // Shutdown the scheduler
+    match sched.shutdown().await {
+        Ok(_) => info!("Scheduler has been shutdown"),
+        Err(error) => {
+            error!("Failed to shutdown scheduler. Error: {}", error);
+            return Err(-1)
+        }
+    }
     Ok(())
 }

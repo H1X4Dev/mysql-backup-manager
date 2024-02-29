@@ -1,38 +1,38 @@
 use serde::{Deserialize, Serialize};
 use crate::config::TimerConfig;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtrabackupEncryptConfig {
     pub key_file: String,
     pub threads: Option<u8>
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtraBackupIncrementalConfig {
     pub enabled: bool,
     pub basedir: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtraBackupConfig {
     pub encrypt: Option<XtrabackupEncryptConfig>,
     pub incremental: Option<XtraBackupIncrementalConfig>,
     pub parallel_threads: Option<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MySQLDump {
     //
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum MySQLBackupType {
     xtrabackup(XtraBackupConfig),
     mysqldump(MySQLDump)
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MySQLBackupConfig {
     #[serde(flatten)]
     pub backup_type: MySQLBackupType,
@@ -42,7 +42,7 @@ pub struct MySQLBackupConfig {
     pub timer: TimerConfig
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MySQLConnectionConfig {
     pub host: Option<String>,
     pub port: Option<u16>,

@@ -12,7 +12,7 @@ password = "123456"
 type = "mysqldump"
 parallel_threads = 16
 databases = ["auth", "wordpress"]
-interval = "* * * * *"
+interval = "* * * * * *"
 keep_last = 7
 
 [mysql-r1.backup.encrypt]
