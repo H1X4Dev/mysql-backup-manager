@@ -3,10 +3,10 @@ use std::path::Path;
 use log::{error, info};
 use sqlx::Sqlite;
 use sqlx::sqlite::SqlitePoolOptions;
+use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 use crate::config::*;
 
 mod config;
-mod database;
 mod service;
 
 const DB_URL: &str = "sqlite://sqlite.db?mode=rwc";
@@ -65,6 +65,7 @@ async fn main() -> Result<(), i32> {
         }
     };
 
+    // See if migration was successful.
     match result {
         Ok(_) => (),
         Err(error) => {
@@ -75,6 +76,8 @@ async fn main() -> Result<(), i32> {
 
     info!("config: {:?}", config);
     info!("pool: {:?}", pool);
+
+    // Now we will need a way to iterate all used services and schedule their job.
 
     Ok(())
 }
