@@ -22,7 +22,7 @@ pub struct XtraBackupConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MySQLDump {
-    //
+    pub separate_tables: Option<bool>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -48,6 +48,7 @@ pub struct MySQLConnectionConfig {
     pub port: Option<u16>,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub socket: Option<String>,
     pub defaults_file: Option<String>,
     pub backup: Option<MySQLBackupConfig>
 }
