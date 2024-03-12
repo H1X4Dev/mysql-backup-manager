@@ -19,3 +19,4 @@ tokio-cron-scheduler = { version = "0.10.0" }
 cron = "0.12.1"
 filepath = "0.1.2"
 which = "6.0.1"
+rust-ini = "0.21.0"

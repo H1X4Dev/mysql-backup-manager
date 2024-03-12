@@ -1,11 +1,11 @@
 use std::env::temp_dir;
 use std::fmt::format;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use log::{error, info};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use crate::service::mysql::config::{MySQLBackupType, MySQLConnectionConfig, MySQLDumpConfig, XtraBackupConfig};
@@ -14,9 +14,11 @@ use cron::Schedule;
 use tempfile::{NamedTempFile, tempfile};
 use tokio::fs;
 use filepath::FilePath;
+use ini::Ini;
 use sqlx::{MySqlPool, Row};
 use sqlx::mysql::MySqlConnectOptions;
 use tokio::process::Command;
+use tokio::sync::Mutex;
 use which::which;
 use crate::config::BackupConfig;
 
@@ -29,52 +31,83 @@ impl MySQLService {
     pub fn new(config: MySQLConnectionConfig, backup_config: BackupConfig) -> MySQLService {
         return MySQLService {
             backup_config,
-            config
+            config,
         };
     }
 
-    pub fn create_command(&self, defaults_path: &PathBuf, file_path: PathBuf) -> Result<Command, Box<dyn std::error::Error>> {
+    pub fn create_command(&self, defaults_path: &Path, file_path: PathBuf) -> Result<Command, Box<dyn std::error::Error>> {
         let command_path = which("mysqldump")?;
         let mut cmd = Command::new(command_path);
-        cmd.arg(format!("--defaults-file={}", defaults_path.to_str().unwrap()));
+        cmd.arg(format!("--defaults-file={}", defaults_path.clone().to_str().unwrap()));
         cmd.arg("--quick");
         cmd.arg("--single-transaction");
         cmd.arg(format!("--result-file={}", file_path.to_str().unwrap()));
         Ok(cmd)
     }
 
-    async fn get_defaults_file(&self) -> Result<File, Box<dyn std::error::Error>> {
-        let mut file = tempfile()?;
+    async fn get_defaults_file(&self) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
+        let mut file = NamedTempFile::new()?;
         // If defaults file already exists, we will create a copy of it and return.
         if let Some(defaults_file) = &self.config.defaults_file {
-            let data = fs::read_to_string(defaults_file).await?;
-            write!(file, "{}", data)?;
+            let data = Ini::load_from_file(defaults_file)?;
+            data.write_to_file(file.path())?;
         } else {
             // Otherwise, we will simply create a new defaults file to use for ourselves.
-            writeln!(file, "[client]")?;
-            writeln!(file, "host = {}", self.config.host.clone().unwrap_or("localhost".to_string()))?;
+            let mut conf = Ini::new();
+            conf.with_section(Some("client"))
+                .set("host", self.config.host.clone().unwrap_or("localhost".to_string()));
             if let Some(port) = &self.config.port {
-                writeln!(file, "port = {}", port)?;
+                conf.with_section(Some("client"))
+                    .set("port", format!("{}", port));
             }
-            writeln!(file, "user = {}", self.config.username.clone().unwrap_or("root".to_string()))?;
-            writeln!(file, "password = {}", self.config.password.clone().unwrap_or("".to_string()))?;
+            conf.with_section(Some("client"))
+                .set("user", self.config.username.clone().unwrap_or("root".to_string()));
+            conf.with_section(Some("client"))
+                .set("password", self.config.password.clone().unwrap_or("".to_string()));
             if let Some(socket) = &self.config.socket {
-                writeln!(file, "socket = {}", socket)?;
+                conf.with_section(Some("client"))
+                    .set("socket", socket);
             }
+            conf.write_to_file(file.path())?;
         }
         Ok(file)
+    }
+
+    fn read_defaults_file(&self, defaults_file: &NamedTempFile) -> Result<MySqlConnectOptions, Box<dyn std::error::Error>> {
+        let mut conf = Ini::load_from_file(defaults_file.path())?;
+        let mut options = MySqlConnectOptions::new();
+        let section = conf.section(Some("client")).unwrap();
+
+        if let Some(host) = section.get("host") {
+            options = options.host(host);
+        }
+        if let Some(port) = section.get("port") {
+            let port: u16 = port.parse()?;
+            options = options.port(port);
+        }
+        if let Some(user) = section.get("user") {
+            options = options.username(user);
+        }
+        if let Some(password) = section.get("password") {
+            options = options.password(password);
+        }
+        if let Some(socket) = section.get("socket") {
+            options = options.socket(socket);
+        }
+
+        Ok(options)
     }
 
     pub async fn do_mysqldump(&self, mysql_config: &MySQLDumpConfig) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(config) = &self.config.backup {
             let mut defaults = self.get_defaults_file().await?;
-            let defaults_path = defaults.path()?;
+            let defaults_path = defaults.path();
 
-            let pool = MySqlPool::connect(&format!(
-                "mysql://[client]?defaults-file={}&defaults-group-suffix=client",
-                defaults_path.to_str().unwrap()
-            )).await?;
+            // Create new pool.
+            let connection_config = self.read_defaults_file(&defaults)?;
+            let pool = MySqlPool::connect_with(connection_config).await?;
 
+            // Load the databases...
             let databases = if let Some(databases) = &config.databases {
                 databases.clone()
             } else {
@@ -90,6 +123,7 @@ impl MySQLService {
                 databases
             };
 
+            // Iterate each database and dump it individually.
             for database in &databases {
                 if mysql_config.separate_tables.is_some() && mysql_config.separate_tables.unwrap() {
                     // Fetch the table names for the database
@@ -105,7 +139,7 @@ impl MySQLService {
                         let result_path = temp_dir.clone().join(format!("{}.{}.sql", database, table_name));
 
                         // Create the command to dump the data.
-                        let mut cmd = self.create_command(&defaults_path, result_path)?;
+                        let mut cmd = self.create_command(defaults_path, result_path)?;
                         cmd.arg(database);
                         cmd.arg(table_name);
 
@@ -124,7 +158,7 @@ impl MySQLService {
                     let result_path = PathBuf::from_str(&self.backup_config.basedir)?.join(format!("{}.sql", database));
 
                     // Create the command to dump the data.
-                    let mut cmd = self.create_command(&defaults_path, result_path)?;
+                    let mut cmd = self.create_command(defaults_path, result_path)?;
                     cmd.arg(database);
 
                     // Run the command and expect output.
@@ -156,10 +190,13 @@ impl Service for MySQLService {
         Ok(())
     }
 
-    // Need to fix an issue where there are too many clones and the mysql service gets recreated...
+    /*
+    Current issues:
+    1. Overlapping jobs
+    2. MySQLService is being copied each time.
+    */
 
     async fn schedule(&self, sched: &mut JobScheduler, service_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-
         if let Some(backup_config) = &self.config.backup {
             let service_name = service_name.to_string();
             let backup_timer = backup_config.timer.interval.clone();
@@ -175,7 +212,9 @@ impl Service for MySQLService {
                     info!("Running backup for MySQL service: {}", service_name);
                     let mysql_service = MySQLService::new(config, backup_config);
                     match mysql_service.update().await {
-                        Ok(_) => (),
+                        Ok(_) => {
+                            info!("Backup completed!");
+                        },
                         Err(error) => {
                             error!("Failed to run backup for MySQL service: {}, error: {}", service_name, error);
                         }
