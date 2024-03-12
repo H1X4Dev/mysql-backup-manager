@@ -21,7 +21,7 @@ pub struct XtraBackupConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MySQLDump {
+pub struct MySQLDumpConfig {
     pub separate_tables: Option<bool>
 }
 
@@ -29,7 +29,7 @@ pub struct MySQLDump {
 #[serde(tag = "type")]
 pub enum MySQLBackupType {
     xtrabackup(XtraBackupConfig),
-    mysqldump(MySQLDump)
+    mysqldump(MySQLDumpConfig)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

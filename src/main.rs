@@ -101,7 +101,7 @@ async fn main() -> Result<(), i32> {
 
         match service_config {
             ServiceConfigEnum::MySQL(mysql_config) => {
-                let mysql_service = Arc::new(Mutex::new(MySQLService::new(mysql_config)));
+                let mysql_service = Arc::new(Mutex::new(MySQLService::new(mysql_config, config.backup.clone())));
                 let mut mysql_service_mutex = mysql_service.lock().unwrap();
                 match mysql_service_mutex.schedule(&mut sched, &service_name).await {
                     Ok(_) => (),

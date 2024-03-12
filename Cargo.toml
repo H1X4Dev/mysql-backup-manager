@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-rustls", "chrono", "uuid", "sqlite" ] }
+sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-rustls", "chrono", "uuid", "sqlite", "mysql" ] }
 uuid = { version = "1.7.0", "features" = [ "v7", "serde" ] }
 tokio = { version = "1.36.0", features = ["full"] }
 toml = "0.8.11"
@@ -17,3 +17,5 @@ async-trait = "0.1.78"
 env_logger = "0.11.3"
 tokio-cron-scheduler = { version = "0.10.0" }
 cron = "0.12.1"
+filepath = "0.1.2"
+which = "6.0.1"

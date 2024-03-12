@@ -1,25 +1,46 @@
+use std::env::temp_dir;
+use std::fmt::format;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use log::{error, info};
 use tokio_cron_scheduler::{Job, JobScheduler};
-use crate::service::mysql::config::{MySQLBackupType, MySQLConnectionConfig};
+use crate::service::mysql::config::{MySQLBackupType, MySQLConnectionConfig, MySQLDumpConfig, XtraBackupConfig};
 use crate::service::service::Service;
 use cron::Schedule;
-use tempfile::tempfile;
+use tempfile::{NamedTempFile, tempfile};
 use tokio::fs;
+use filepath::FilePath;
+use sqlx::{MySqlPool, Row};
+use sqlx::mysql::MySqlConnectOptions;
+use tokio::process::Command;
+use which::which;
+use crate::config::BackupConfig;
 
 pub struct MySQLService {
-    pub config: MySQLConnectionConfig
+    pub backup_config: BackupConfig,
+    pub config: MySQLConnectionConfig,
 }
 
 impl MySQLService {
-    pub fn new(config: MySQLConnectionConfig) -> MySQLService {
+    pub fn new(config: MySQLConnectionConfig, backup_config: BackupConfig) -> MySQLService {
         return MySQLService {
+            backup_config,
             config
-        }
+        };
+    }
+
+    pub fn create_command(&self, defaults_path: &PathBuf, file_path: PathBuf) -> Result<Command, Box<dyn std::error::Error>> {
+        let command_path = which("mysqldump")?;
+        let mut cmd = Command::new(command_path);
+        cmd.arg(format!("--defaults-file={}", defaults_path.to_str().unwrap()));
+        cmd.arg("--quick");
+        cmd.arg("--single-transaction");
+        cmd.arg(format!("--result-file={}", file_path.to_str().unwrap()));
+        Ok(cmd)
     }
 
     async fn get_defaults_file(&self) -> Result<File, Box<dyn std::error::Error>> {
@@ -44,20 +65,82 @@ impl MySQLService {
         Ok(file)
     }
 
-    pub async fn do_mysqldump(&self) -> Result<(), Box<dyn std::error::Error>> {
-        /**
-         * mysqldump's are pretty simple, here we will just call mysqldump library
-         * and then dump it how we need to do it, by the way, we also have to create
-         * defaults file.
-         */
-        let mut defaults = self.get_defaults_file()?;
+    pub async fn do_mysqldump(&self, mysql_config: &MySQLDumpConfig) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(config) = &self.config.backup {
+            let mut defaults = self.get_defaults_file().await?;
+            let defaults_path = defaults.path()?;
 
-        // do shit
+            let pool = MySqlPool::connect(&format!(
+                "mysql://[client]?defaults-file={}&defaults-group-suffix=client",
+                defaults_path.to_str().unwrap()
+            )).await?;
 
+            let databases = if let Some(databases) = &config.databases {
+                databases.clone()
+            } else {
+                // If databases are not provided, fetch all databases except the excluded ones
+                let excluded_databases = config.databases_exclude.clone().unwrap_or_default();
+                let databases = sqlx::query("SHOW DATABASES")
+                    .fetch_all(&pool)
+                    .await?
+                    .into_iter()
+                    .map(|row| row.get(0))
+                    .filter(|db| !excluded_databases.contains(db))
+                    .collect::<Vec<String>>();
+                databases
+            };
+
+            for database in &databases {
+                if mysql_config.separate_tables.is_some() && mysql_config.separate_tables.unwrap() {
+                    // Fetch the table names for the database
+                    sqlx::query(&format!("USE {}", database)).execute(&pool).await?;
+                    let tables = sqlx::query("SHOW TABLES").fetch_all(&pool).await?;
+                    let temp_dir = PathBuf::from_str(&self.backup_config.basedir)?.join(database);
+
+                    for table in tables {
+                        let table_name: String = table.get(0);
+                        info!("Dumping table: {}.{}", database, table_name);
+
+                        // Create a result path, where the SQL will be dumped off to.
+                        let result_path = temp_dir.clone().join(format!("{}.{}.sql", database, table_name));
+
+                        // Create the command to dump the data.
+                        let mut cmd = self.create_command(&defaults_path, result_path)?;
+                        cmd.arg(database);
+                        cmd.arg(table_name);
+
+                        // Run the command and expect output.
+                        let status = cmd.stdout(Stdio::null()).status().await?;
+                        if status.success() {
+                            info!("-> Dumped!");
+                        } else {
+                            info!("-> Failed to dump!");
+                        }
+                    }
+                } else {
+                    info!("Dumping database: {}", database);
+
+                    // Create a result path, where the SQL will be dumped off to.
+                    let result_path = PathBuf::from_str(&self.backup_config.basedir)?.join(format!("{}.sql", database));
+
+                    // Create the command to dump the data.
+                    let mut cmd = self.create_command(&defaults_path, result_path)?;
+                    cmd.arg(database);
+
+                    // Run the command and expect output.
+                    let status = cmd.stdout(Stdio::null()).status().await?;
+                    if status.success() {
+                        info!("-> Dumped!");
+                    } else {
+                        info!("-> Failed to dump!");
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
-    pub async fn do_xtrabackup(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn do_xtrabackup(&self, config: &XtraBackupConfig) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 }
@@ -65,27 +148,32 @@ impl MySQLService {
 impl Service for MySQLService {
     async fn update(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(backup_config) = &self.config.backup {
-            match backup_config.backup_type {
-                MySQLBackupType::xtrabackup(_) => self.do_xtrabackup().await?,
-                MySQLBackupType::mysqldump(_) => self.do_mysqldump().await?
+            match &backup_config.backup_type {
+                MySQLBackupType::xtrabackup(config) => self.do_xtrabackup(config).await?,
+                MySQLBackupType::mysqldump(config) => self.do_mysqldump(config).await?
             }
         }
         Ok(())
     }
 
+    // Need to fix an issue where there are too many clones and the mysql service gets recreated...
+
     async fn schedule(&self, sched: &mut JobScheduler, service_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+
         if let Some(backup_config) = &self.config.backup {
             let service_name = service_name.to_string();
             let backup_timer = backup_config.timer.interval.clone();
             let config = self.config.clone();
+            let backup_config = self.backup_config.clone();
 
             let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, mut l| {
                 let service_name = service_name.clone();
                 let config = config.clone();
+                let backup_config = backup_config.clone();
 
                 Box::pin(async move {
                     info!("Running backup for MySQL service: {}", service_name);
-                    let mysql_service = MySQLService::new(config);
+                    let mysql_service = MySQLService::new(config, backup_config);
                     match mysql_service.update().await {
                         Ok(_) => (),
                         Err(error) => {
