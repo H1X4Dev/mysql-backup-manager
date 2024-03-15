@@ -213,12 +213,14 @@ impl Service for MySQLService {
                 let running = running.clone();
 
                 Box::pin(async move {
-                    let mut m = running.lock().await;
-                    if *m { // issue now is that it works, but it doesn't cancel this job ...
-                        info!("Skipping backup for MySQL service: {}", service_name);
-                        return;
+                    {
+                        let mut m = running.lock().await;
+                        if *m {
+                            info!("Skipping backup for MySQL service: {}", service_name);
+                            return;
+                        }
+                        *m = true;
                     }
-                    *m = true;
                     info!("Running backup for MySQL service: {}, UUID: {}", service_name, uuid);
 
                     let mysql_service = MySQLService::new(config, backup_config);
@@ -230,7 +232,10 @@ impl Service for MySQLService {
                             error!("Failed to run backup for MySQL service: {}, error: {}", service_name, error);
                         }
                     };
-                    *m = false;
+                    {
+                        let mut m = running.lock().await;
+                        *m = false;
+                    }
                 })
             })?;
 
