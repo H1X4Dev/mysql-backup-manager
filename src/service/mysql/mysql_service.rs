@@ -25,6 +25,7 @@ use crate::config::BackupConfig;
 pub struct MySQLService {
     pub backup_config: BackupConfig,
     pub config: MySQLConnectionConfig,
+    pub running: Arc<Mutex<bool>>
 }
 
 impl MySQLService {
@@ -32,6 +33,7 @@ impl MySQLService {
         return MySQLService {
             backup_config,
             config,
+            running: Arc::new(Mutex::new(false))
         };
     }
 
@@ -202,14 +204,23 @@ impl Service for MySQLService {
             let backup_timer = backup_config.timer.interval.clone();
             let config = self.config.clone();
             let backup_config = self.backup_config.clone();
+            let running = self.running.clone();
 
             let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, mut l| {
                 let service_name = service_name.clone();
                 let config = config.clone();
                 let backup_config = backup_config.clone();
+                let running = running.clone();
 
                 Box::pin(async move {
-                    info!("Running backup for MySQL service: {}", service_name);
+                    let mut m = running.lock().await;
+                    if *m { // issue now is that it works, but it doesn't cancel this job ...
+                        info!("Skipping backup for MySQL service: {}", service_name);
+                        return;
+                    }
+                    *m = true;
+                    info!("Running backup for MySQL service: {}, UUID: {}", service_name, uuid);
+
                     let mysql_service = MySQLService::new(config, backup_config);
                     match mysql_service.update().await {
                         Ok(_) => {
@@ -219,6 +230,7 @@ impl Service for MySQLService {
                             error!("Failed to run backup for MySQL service: {}, error: {}", service_name, error);
                         }
                     };
+                    *m = false;
                 })
             })?;
 
