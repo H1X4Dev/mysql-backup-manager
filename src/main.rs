@@ -8,7 +8,7 @@ use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 use crate::config::*;
 use crate::service::mysql::config::MySQLConnectionConfig;
 use crate::service::mysql::mysql_service::MySQLService;
-use crate::service::service::Service;
+use crate::service::service::{ServiceScheduler, Service};
 use tokio::signal::ctrl_c;
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
@@ -96,20 +96,21 @@ async fn main() -> Result<(), i32> {
     }));
 
     // Schedule the service.
+    let mut services: Vec<Arc<dyn Service>> = vec![];
     for (service_name, service_config) in config.services {
         info!("Scheduling {}", service_name);
 
         match service_config {
             ServiceConfigEnum::MySQL(mysql_config) => {
-                let mysql_service = Arc::new(Mutex::new(MySQLService::new(mysql_config, config.backup.clone())));
-                let mut mysql_service_mutex = mysql_service.lock().unwrap();
-                match mysql_service_mutex.schedule(&mut sched, &service_name).await {
+                let mysql_service = Arc::new(MySQLService::new(mysql_config, config.backup.clone()));
+                match MySQLService::schedule(mysql_service.clone(), &mut sched, &service_name).await {
                     Ok(_) => (),
                     Err(error) => {
                         error!("Failed to schedule MySQL task. Error: {}", error);
                         return Err(-1)
                     }
                 };
+                services.push(mysql_service);
             }
         }
     }

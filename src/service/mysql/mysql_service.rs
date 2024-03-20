@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::env::temp_dir;
 use std::fmt::format;
 use std::fs::File;
@@ -6,10 +7,12 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc};
-use log::{error, info};
+use std::time::Duration;
+use async_trait::async_trait;
+use log::{error, info, warn};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use crate::service::mysql::config::{MySQLBackupType, MySQLConnectionConfig, MySQLDumpConfig, XtraBackupConfig};
-use crate::service::service::Service;
+use crate::service::service::{ServiceScheduler, Service};
 use cron::Schedule;
 use tempfile::{NamedTempFile, tempfile};
 use tokio::fs;
@@ -25,7 +28,7 @@ use crate::config::BackupConfig;
 pub struct MySQLService {
     pub backup_config: BackupConfig,
     pub config: MySQLConnectionConfig,
-    pub running: Arc<Mutex<bool>>
+    pub running: Arc<Mutex<bool>>,
 }
 
 impl MySQLService {
@@ -33,8 +36,23 @@ impl MySQLService {
         return MySQLService {
             backup_config,
             config,
-            running: Arc::new(Mutex::new(false))
+            running: Arc::new(Mutex::new(false)),
         };
+    }
+
+    pub async fn try_set_running(&self) -> bool {
+        let mut running = self.running.lock().await;
+        if *running {
+            false
+        } else {
+            *running = true;
+            true
+        }
+    }
+
+    pub async fn set_running(&self, value: bool) {
+        let mut running = self.running.lock().await;
+        *running = value;
     }
 
     pub fn create_command(&self, defaults_path: &Path, file_path: PathBuf) -> Result<Command, Box<dyn std::error::Error>> {
@@ -107,20 +125,21 @@ impl MySQLService {
 
             // Create new pool.
             let connection_config = self.read_defaults_file(&defaults)?;
-            let pool = MySqlPool::connect_with(connection_config).await?;
+            let pool = MySqlPool::connect_lazy_with(connection_config);
 
-            // Load the databases...
+            // Fetch the list of databases.
             let databases = if let Some(databases) = &config.databases {
                 databases.clone()
             } else {
                 // If databases are not provided, fetch all databases except the excluded ones
                 let excluded_databases = config.databases_exclude.clone().unwrap_or_default();
+                let excluded_default_databases = vec!["information_schema".to_string(), "mysql".to_string(), "performance_schema".to_string(), "sys".to_string()];
                 let databases = sqlx::query("SHOW DATABASES")
                     .fetch_all(&pool)
                     .await?
                     .into_iter()
                     .map(|row| row.get(0))
-                    .filter(|db| !excluded_databases.contains(db))
+                    .filter(|db| !excluded_databases.contains(db) && !excluded_default_databases.contains(db))
                     .collect::<Vec<String>>();
                 databases
             };
@@ -181,6 +200,7 @@ impl MySQLService {
     }
 }
 
+#[async_trait]
 impl Service for MySQLService {
     async fn update(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(backup_config) = &self.config.backup {
@@ -191,6 +211,10 @@ impl Service for MySQLService {
         }
         Ok(())
     }
+}
+
+#[async_trait]
+impl ServiceScheduler for MySQLService {
 
     /*
     Current issues:
@@ -198,50 +222,44 @@ impl Service for MySQLService {
     2. MySQLService is being copied each time.
     */
 
-    async fn schedule(&self, sched: &mut JobScheduler, service_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(backup_config) = &self.config.backup {
-            let service_name = service_name.to_string();
-            let backup_timer = backup_config.timer.interval.clone();
-            let config = self.config.clone();
-            let backup_config = self.backup_config.clone();
-            let running = self.running.clone();
+    async fn schedule<T: Service + Any>(service: Arc<T>, sched: &mut JobScheduler, service_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let service_clone = service.clone();
+        match Arc::downcast::<MySQLService>(service_clone) {
+            Ok(mysql_service) => {
+                if let Some(backup_config) = &mysql_service.config.backup {
+                    let service_name = service_name.to_string();
+                    let backup_timer = backup_config.timer.interval.clone();
 
-            let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, mut l| {
-                let service_name = service_name.clone();
-                let config = config.clone();
-                let backup_config = backup_config.clone();
-                let running = running.clone();
+                    let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, mut l| {
+                        let service_name = service_name.clone();
+                        let self_clone = mysql_service.clone();
 
-                Box::pin(async move {
-                    {
-                        let mut m = running.lock().await;
-                        if *m {
-                            info!("Skipping backup for MySQL service: {}", service_name);
-                            return;
-                        }
-                        *m = true;
-                    }
-                    info!("Running backup for MySQL service: {}, UUID: {}", service_name, uuid);
+                        Box::pin(async move {
+                            if !self_clone.try_set_running().await {
+                                warn!("MySQL backup already running.");
+                                return;
+                            }
 
-                    let mysql_service = MySQLService::new(config, backup_config);
-                    match mysql_service.update().await {
-                        Ok(_) => {
-                            info!("Backup completed!");
-                        },
-                        Err(error) => {
-                            error!("Failed to run backup for MySQL service: {}, error: {}", service_name, error);
-                        }
-                    };
-                    {
-                        let mut m = running.lock().await;
-                        *m = false;
-                    }
-                })
-            })?;
+                            info!("Running backup for MySQL service: {}, UUID: {}", service_name, uuid);
 
-            sched.add(job).await?;
+                            match self_clone.update().await {
+                                Ok(_) => {
+                                    info!("Backup completed!");
+                                }
+                                Err(error) => {
+                                    error!("Failed to run backup for MySQL service: {}, error: {}", service_name, error);
+                                }
+                            };
+
+                            self_clone.set_running(false).await;
+                        })
+                    })?;
+
+                    sched.add(job).await?;
+                }
+            }
+            Err(_) => {}
         }
-
         Ok(())
     }
 }
