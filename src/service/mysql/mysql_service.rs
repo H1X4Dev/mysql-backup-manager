@@ -3,6 +3,7 @@ use std::env::temp_dir;
 use std::fmt::format;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::str::FromStr;
@@ -24,6 +25,7 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use which::which;
 use crate::config::BackupConfig;
+use crate::service::mysql::mysql_defaults::MySqlDefaultsReader;
 
 pub struct MySQLService {
     pub backup_config: BackupConfig,
@@ -93,38 +95,13 @@ impl MySQLService {
         Ok(file)
     }
 
-    fn read_defaults_file(&self, defaults_file: &NamedTempFile) -> Result<MySqlConnectOptions, Box<dyn std::error::Error>> {
-        let mut conf = Ini::load_from_file(defaults_file.path())?;
-        let mut options = MySqlConnectOptions::new();
-        let section = conf.section(Some("client")).unwrap();
-
-        if let Some(host) = section.get("host") {
-            options = options.host(host);
-        }
-        if let Some(port) = section.get("port") {
-            let port: u16 = port.parse()?;
-            options = options.port(port);
-        }
-        if let Some(user) = section.get("user") {
-            options = options.username(user);
-        }
-        if let Some(password) = section.get("password") {
-            options = options.password(password);
-        }
-        if let Some(socket) = section.get("socket") {
-            options = options.socket(socket);
-        }
-
-        Ok(options)
-    }
-
     pub async fn do_mysqldump(&self, mysql_config: &MySQLDumpConfig) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(config) = &self.config.backup {
             let mut defaults = self.get_defaults_file().await?;
             let defaults_path = defaults.path();
 
             // Create new pool.
-            let connection_config = self.read_defaults_file(&defaults)?;
+            let connection_config = MySqlConnectOptions::from_defaults_file(defaults_path)?;
             let pool = MySqlPool::connect_lazy_with(connection_config);
 
             // Fetch the list of databases.
