@@ -12,6 +12,3 @@ pub struct MysqlBackupRow {
     pub size: i64,
     pub created_at: NaiveDateTime
 }
-
-impl MysqlBackupRow {
-}
