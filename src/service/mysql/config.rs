@@ -34,8 +34,7 @@ pub struct MySQLBackupConfig {
     pub backup_type: MySQLBackupType,
     pub databases: Option<Vec<String>>,
     pub databases_exclude: Option<Vec<String>>,
-    #[serde(flatten)]
-    pub timer: TimerConfig
+    pub interval: String
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

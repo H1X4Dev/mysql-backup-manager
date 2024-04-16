@@ -1,6 +1,8 @@
 use std::any::Any;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc};
+use std::time::Duration;
 use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -9,8 +11,12 @@ use crate::service::service::{ServiceScheduler, Service};
 use cron::Schedule;
 use tempfile::NamedTempFile;
 use ini::Ini;
+use sqlx::types::chrono::Utc;
+use tokio::fs;
 use tokio::sync::Mutex;
 use crate::config::BackupConfig;
+use crate::DB_POOL;
+use crate::service::mysql::database::MysqlBackupRow;
 use crate::service::mysql::mysqldump::MySqlDumpRunner;
 use crate::service::mysql::xtrabackup::XtraBackupRunner;
 
@@ -77,6 +83,27 @@ impl MySQLService {
 impl Service for MySQLService {
     async fn update(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(backup_config) = &self.config.backup {
+            // If keep last was specified, then we have to clean up old backups from the base directory.
+            if let Some(keep_last) = self.backup_config.keep_last {
+                let pool = DB_POOL.get().unwrap();
+                let interval = Utc::now() - Duration::from_secs(keep_last * 24 * 60 * 60);
+                let older_than_interval: Vec<MysqlBackupRow> = sqlx::query_as("SELECT * FROM backups WHERE created_at < $1")
+                    .bind(interval)
+                    .fetch_all(pool)
+                    .await?;
+
+                // Now iterate everything and nuke.
+                for backup in older_than_interval {
+                    let path = PathBuf::from_str(&backup.path).unwrap().as_path();
+                    if path.is_file() {
+                        fs::remove_file(path).await?;
+                    } else {
+                        fs::remove_dir_all(path).await?;
+                    }
+                }
+            }
+
+            // Otherwise we simply do the task.
             match &backup_config.backup_type {
                 MySQLBackupType::XtraBackup(config) => self.do_xtrabackup(config).await?,
                 MySQLBackupType::MySqlDump(config) => self.do_mysqldump(config).await?
@@ -94,7 +121,7 @@ impl ServiceScheduler for MySQLService {
             Ok(mysql_service) => {
                 if let Some(backup_config) = &mysql_service.config.backup {
                     let service_name = service_name.to_string();
-                    let backup_timer = backup_config.timer.interval.clone();
+                    let backup_timer = backup_config.interval.clone();
 
                     let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, _| {
                         let service_name = service_name.clone();

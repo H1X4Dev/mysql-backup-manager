@@ -10,14 +10,9 @@ pub enum ServiceConfigEnum {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TimerConfig {
-    pub interval: String,
-    pub keep_last: u16
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BackupConfig {
-    pub basedir: String
+    pub basedir: String,
+    pub keep_last: Option<u64>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -152,13 +147,11 @@ basedir = "/home"
                                 basedir: "/home".to_string()
                             }),
                             parallel_threads: Some(16),
+                            use_memory: None,
                         }),
                         databases: Some(vec!["auth".to_string(), "wordpress".to_string()]),
                         databases_exclude: None,
-                        timer: TimerConfig {
-                            interval: "* * * * *".to_string(),
-                            keep_last: 7,
-                        }
+                        interval: "* * * * *".to_string()
                     }),
                 }))
             ])
