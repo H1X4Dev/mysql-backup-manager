@@ -1,22 +1,23 @@
 use std::env;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use log::{error, info};
-use sqlx::Sqlite;
+use sqlx::{Pool, Sqlite};
 use sqlx::sqlite::SqlitePoolOptions;
-use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
+use tokio_cron_scheduler::JobScheduler;
 use crate::config::*;
-use crate::service::mysql::config::MySQLConnectionConfig;
 use crate::service::mysql::mysql_service::MySQLService;
 use crate::service::service::{ServiceScheduler, Service};
 use tokio::signal::ctrl_c;
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::OnceCell;
 
 mod config;
 mod service;
 
 const DB_URL: &str = "sqlite://sqlite.db?mode=rwc";
+static DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::const_new();
 
 #[tokio::main]
 async fn main() -> Result<(), i32> {
@@ -54,7 +55,9 @@ async fn main() -> Result<(), i32> {
     };
 
     // Create a new pool
-    let pool = match SqlitePoolOptions::new().max_connections(15).connect(DB_URL).await {
+    let pool = match DB_POOL.get_or_try_init(|| async {
+        SqlitePoolOptions::new().max_connections(15).connect(DB_URL).await
+    }).await {
         Ok(pool) => pool,
         Err(error) => {
             error!("An error occurred while connecting to the database: {}", error);
@@ -65,7 +68,7 @@ async fn main() -> Result<(), i32> {
     // Migrate the database
     let migrations_path = current_path.clone().join("migrations");
     let result = match sqlx::migrate::Migrator::new(migrations_path).await {
-        Ok(m) => m.run(&pool).await,
+        Ok(m) => m.run(pool).await,
         Err(error) => {
             error!("An error occurred while initializing migrations: {}", error);
             return Err(-1)

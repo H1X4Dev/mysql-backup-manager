@@ -7,14 +7,14 @@ use sqlx::mysql::MySqlConnectOptions;
 use sqlx::{MySqlPool, Row};
 use tokio::process::Command;
 use which::which;
-use crate::service::mysql::config::{MySQLConnectionConfig, MySQLDumpConfig};
+use crate::service::mysql::config::MySQLDumpConfig;
 use crate::service::mysql::mysql_defaults::MySqlDefaultsReader;
 use crate::service::mysql::mysql_service::MySQLService;
 
 pub fn create_command(defaults_path: &Path, file_path: PathBuf) -> Result<Command, Box<dyn std::error::Error>> {
     let command_path = which("mysqldump")?;
     let mut cmd = Command::new(command_path);
-    cmd.arg(format!("--defaults-file={}", defaults_path.clone().to_str().unwrap()));
+    cmd.arg(format!("--defaults-file={}", defaults_path.to_str().unwrap()));
     cmd.arg("--quick");
     cmd.arg("--single-transaction");
     cmd.arg(format!("--result-file={}", file_path.to_str().unwrap()));
@@ -30,7 +30,7 @@ pub trait MySqlDumpRunner {
 impl MySqlDumpRunner for MySQLService {
     async fn do_mysqldump(&self, mysql_config: &MySQLDumpConfig) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(config) = &self.config.backup {
-            let mut defaults = self.get_defaults_file().await?;
+            let defaults = self.get_defaults_file().await?;
             let defaults_path = defaults.path();
 
             // Create new pool.
@@ -70,7 +70,7 @@ impl MySqlDumpRunner for MySQLService {
                         let result_path = temp_dir.clone().join(format!("{}.{}.sql", database, table_name));
 
                         // Create the command to dump the data.
-                        let mut cmd = self.create_command(defaults_path, result_path)?;
+                        let mut cmd = create_command(defaults_path, result_path)?;
                         cmd.arg(database);
                         cmd.arg(table_name);
 
@@ -89,7 +89,7 @@ impl MySqlDumpRunner for MySQLService {
                     let result_path = PathBuf::from_str(&self.backup_config.basedir)?.join(format!("{}.sql", database));
 
                     // Create the command to dump the data.
-                    let mut cmd = self.create_command(defaults_path, result_path)?;
+                    let mut cmd = create_command(defaults_path, result_path)?;
                     cmd.arg(database);
 
                     // Run the command and expect output.

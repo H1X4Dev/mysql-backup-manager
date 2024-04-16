@@ -15,10 +15,6 @@ databases = ["auth", "wordpress"]
 interval = "* * * * * *"
 keep_last = 7
 
-[mysql-r1.backup.encrypt]
-key_file = "/etc/mysql/backup.key"
-threads = 16
-
 [mysql-r1.backup.incremental]
 enabled = true
 basedir = "/home"

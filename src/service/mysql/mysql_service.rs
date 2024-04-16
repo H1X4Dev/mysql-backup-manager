@@ -1,31 +1,16 @@
 use std::any::Any;
-use std::env::temp_dir;
-use std::fmt::format;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc};
-use std::time::Duration;
 use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio_cron_scheduler::{Job, JobScheduler};
-use crate::service::mysql::config::{MySQLBackupType, MySQLConnectionConfig, MySQLDumpConfig, XtraBackupConfig};
+use crate::service::mysql::config::{MySQLBackupType, MySQLConnectionConfig};
 use crate::service::service::{ServiceScheduler, Service};
 use cron::Schedule;
-use tempfile::{NamedTempFile, tempfile};
-use tokio::fs;
-use filepath::FilePath;
+use tempfile::NamedTempFile;
 use ini::Ini;
-use sqlx::{MySqlPool, Row};
-use sqlx::mysql::MySqlConnectOptions;
-use tokio::process::Command;
 use tokio::sync::Mutex;
-use which::which;
 use crate::config::BackupConfig;
-use crate::service::mysql::mysql_defaults::MySqlDefaultsReader;
 use crate::service::mysql::mysqldump::MySqlDumpRunner;
 use crate::service::mysql::xtrabackup::XtraBackupRunner;
 
@@ -60,7 +45,7 @@ impl MySQLService {
     }
 
     pub async fn get_defaults_file(&self) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
-        let mut file = NamedTempFile::new()?;
+        let file = NamedTempFile::new()?;
         // If defaults file already exists, we will create a copy of it and return.
         if let Some(defaults_file) = &self.config.defaults_file {
             let data = Ini::load_from_file(defaults_file)?;
@@ -93,8 +78,8 @@ impl Service for MySQLService {
     async fn update(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(backup_config) = &self.config.backup {
             match &backup_config.backup_type {
-                MySQLBackupType::xtrabackup(config) => self.do_xtrabackup(config).await?,
-                MySQLBackupType::mysqldump(config) => self.do_mysqldump(config).await?
+                MySQLBackupType::XtraBackup(config) => self.do_xtrabackup(config).await?,
+                MySQLBackupType::MySqlDump(config) => self.do_mysqldump(config).await?
             }
         }
         Ok(())
@@ -111,7 +96,7 @@ impl ServiceScheduler for MySQLService {
                     let service_name = service_name.to_string();
                     let backup_timer = backup_config.timer.interval.clone();
 
-                    let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, mut l| {
+                    let job = Job::new_async(Schedule::from_str(&backup_timer)?, move |uuid, _| {
                         let service_name = service_name.clone();
                         let self_clone = mysql_service.clone();
 

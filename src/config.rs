@@ -37,24 +37,26 @@ impl Config {
 
     fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
         for service in self.services.values() {
-            if let ServiceConfigEnum::MySQL(mysql_config) = service {
-                // Check 1: If defaults_file is specified, other connection options should not be.
-                if mysql_config.defaults_file.is_some() {
-                    let other_options = [ &mysql_config.username, &mysql_config.password, &mysql_config.host ];
-                    if other_options.iter().any(|option| option.is_some()) {
-                        return Err("If defaults_file is specified, username, password, host, and port must not be set.".into());
+            match service {
+                ServiceConfigEnum::MySQL(mysql_config) => {
+                    // Check 1: If defaults_file is specified, other connection options should not be.
+                    if mysql_config.defaults_file.is_some() {
+                        let other_options = [ &mysql_config.username, &mysql_config.password, &mysql_config.host ];
+                        if other_options.iter().any(|option| option.is_some()) {
+                            return Err("If defaults_file is specified, username, password, host, and port must not be set.".into());
+                        }
+
+                        // Check the port option separately
+                        if mysql_config.port.is_some() {
+                            return Err("If defaults_file is specified, port must not be set.".into());
+                        }
                     }
 
-                    // Check the port option separately
-                    if mysql_config.port.is_some() {
-                        return Err("If defaults_file is specified, port must not be set.".into());
-                    }
-                }
-
-                // Check 2: If xtrabackup is selected, ensure it's not on Windows.
-                if let Some(MySQLBackupConfig { backup_type: MySQLBackupType::xtrabackup(_), .. }) = &mysql_config.backup {
-                    if cfg!(target_os = "windows") {
-                        return Err("xtrabackup is not supported on Windows platforms.".into());
+                    // Check 2: If xtrabackup is selected, ensure it's not on Windows.
+                    if let Some(MySQLBackupConfig { backup_type: MySQLBackupType::XtraBackup(_), .. }) = &mysql_config.backup {
+                        if cfg!(target_os = "windows") {
+                            return Err("xtrabackup is not supported on Windows platforms.".into());
+                        }
                     }
                 }
             }
@@ -62,12 +64,12 @@ impl Config {
 
         Ok(())
     }
-
+    /*
     pub async fn save(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let result = toml::to_string(self)?;
         fs::write(path, result).await?;
         return Ok(())
-    }
+    }*/
 }
 
 #[cfg(test)]
@@ -76,7 +78,7 @@ mod tests {
     use std::fs;
     use std::io::Read;
     use tempfile::tempdir;
-    use crate::service::mysql::config::{XtraBackupConfig, XtrabackupEncryptConfig, XtraBackupIncrementalConfig};
+    use crate::service::mysql::config::{XtraBackupConfig, XtraBackupIncrementalConfig};
 
     #[tokio::test]
     async fn test_serialization() {
@@ -104,10 +106,6 @@ parallel_threads = 16
 databases = ["auth", "wordpress"]
 interval = "* * * * *"
 keep_last = 7
-
-[mysql-r1.backup.encrypt]
-key_file = "/etc/mysql/backup.key"
-threads = 16
 
 [mysql-r1.backup.incremental]
 enabled = true
@@ -145,13 +143,10 @@ basedir = "/home"
                     port: Some(3306),
                     username: Some("root".to_string()),
                     password: Some("123456".to_string()),
+                    socket: None,
                     defaults_file: None,
                     backup: Some(MySQLBackupConfig {
-                        backup_type: MySQLBackupType::xtrabackup(XtraBackupConfig {
-                            encrypt: Some(XtrabackupEncryptConfig {
-                                key_file: "/etc/mysql/backup.key".to_string(),
-                                threads: Some(16),
-                            }),
+                        backup_type: MySQLBackupType::XtraBackup(XtraBackupConfig {
                             incremental: Some(XtraBackupIncrementalConfig {
                                 enabled: true,
                                 basedir: "/home".to_string()

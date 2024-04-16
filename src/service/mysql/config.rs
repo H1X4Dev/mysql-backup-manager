@@ -2,12 +2,6 @@ use serde::{Deserialize, Serialize};
 use crate::config::TimerConfig;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct XtrabackupEncryptConfig {
-    pub key_file: String,
-    pub threads: Option<u8>
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtraBackupIncrementalConfig {
     pub enabled: bool,
     pub basedir: String
@@ -15,7 +9,6 @@ pub struct XtraBackupIncrementalConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtraBackupConfig {
-    pub encrypt: Option<XtrabackupEncryptConfig>,
     pub incremental: Option<XtraBackupIncrementalConfig>,
     pub parallel_threads: Option<u8>,
 }
@@ -28,8 +21,10 @@ pub struct MySQLDumpConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum MySQLBackupType {
-    xtrabackup(XtraBackupConfig),
-    mysqldump(MySQLDumpConfig)
+    #[serde(rename = "xtrabackup")]
+    XtraBackup(XtraBackupConfig),
+    #[serde(rename = "mysqldump")]
+    MySqlDump(MySQLDumpConfig)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
