@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use crate::config::TimerConfig;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtraBackupIncrementalConfig {

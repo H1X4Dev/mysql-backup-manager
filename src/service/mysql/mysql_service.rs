@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc};
 use std::time::Duration;
@@ -94,7 +94,8 @@ impl Service for MySQLService {
 
                 // Now iterate everything and nuke.
                 for backup in older_than_interval {
-                    let path = PathBuf::from_str(&backup.path).unwrap().as_path();
+                    let str_path = backup.path.clone();
+                    let path = PathBuf::from_str(&str_path).unwrap();
                     if path.is_file() {
                         fs::remove_file(path).await?;
                     } else {
