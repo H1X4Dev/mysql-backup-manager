@@ -9,6 +9,7 @@ pub struct MysqlBackupRow {
     #[sqlx(rename = "type")]
     backup_type: u8, // 0 = mysqlbackup, 1 = xtrabackup
     storage_type: u8, // 0 = local, 1 = s3 bucket
+    database_name: String,
     path: String,
     size: u64,
     created_at: NaiveDateTime,

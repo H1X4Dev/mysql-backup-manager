@@ -21,7 +21,6 @@ impl MySqlDefaultsReader for MySqlConnectOptions {
                 options = options.port(port);
             }
             if let Some(user) = section.get("user") {
-                info!("reading username: {}", user);
                 options = options.username(user);
             }
             if let Some(password) = section.get("password") {
@@ -32,5 +31,64 @@ impl MySqlDefaultsReader for MySqlConnectOptions {
             }
         }
         Ok(options)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_from_defaults_file() {
+        // Create a temporary file with sample MySQL defaults
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "[client]").unwrap();
+        writeln!(file, "host = localhost").unwrap();
+        writeln!(file, "port = 3306").unwrap();
+        writeln!(file, "user = testuser").unwrap();
+        writeln!(file, "password = testpass").unwrap();
+        writeln!(file, "socket = /tmp/mysql.sock").unwrap();
+
+        // Call the from_defaults_file function
+        let options = MySqlConnectOptions::from_defaults_file(file.path()).unwrap();
+
+        // Assert the expected values
+        assert_eq!(options.host(), Some("localhost"));
+        assert_eq!(options.port(), Some(3306));
+        assert_eq!(options.username(), Some("testuser"));
+        assert_eq!(options.password(), Some("testpass"));
+        assert_eq!(options.socket(), Some("/tmp/mysql.sock"));
+    }
+
+    #[test]
+    fn test_from_defaults_file_missing_fields() {
+        // Create a temporary file with missing fields
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "[client]").unwrap();
+        writeln!(file, "host = localhost").unwrap();
+
+        // Call the from_defaults_file function
+        let options = MySqlConnectOptions::from_defaults_file(file.path()).unwrap();
+
+        // Assert the expected values
+        assert_eq!(options.host(), Some("localhost"));
+        assert_eq!(options.port(), None);
+        assert_eq!(options.username(), None);
+        assert_eq!(options.password(), None);
+        assert_eq!(options.socket(), None);
+    }
+
+    #[test]
+    fn test_from_defaults_file_invalid_port() {
+        // Create a temporary file with an invalid port
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "[client]").unwrap();
+        writeln!(file, "port = invalid").unwrap();
+
+        // Call the from_defaults_file function and assert the error
+        let result = MySqlConnectOptions::from_defaults_file(file.path());
+        assert!(result.is_err());
     }
 }
