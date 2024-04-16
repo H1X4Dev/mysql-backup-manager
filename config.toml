@@ -10,11 +10,6 @@ password = "123456"
 
 [mysql-r1.backup]
 type = "mysqldump"
-parallel_threads = 16
-databases = ["auth", "wordpress"]
-interval = "* * * * * *"
+databases = ["auth"]
+interval = "*/30 * * * * *"
 keep_last = 7
-
-[mysql-r1.backup.incremental]
-enabled = true
-basedir = "/home"

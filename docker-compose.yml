@@ -1,0 +1,22 @@
+version: '3.9'
+services:
+  mysql:
+    image  : percona/percona-server:8.0
+    ports  :
+      - 3306:3306
+    restart: 'no'
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+  phpmyadmin:
+    image: phpmyadmin
+    restart: 'no'
+    ports:
+      - 8080:80
+    environment:
+      PMA_HOST            : mysql
+      MYSQL_USER          : "root"
+      MYSQL_ROOT_PASSWORD : "123456"
+      PMA_USER            : "root"
+      PMA_PASSWORD        : "123456"
+    depends_on:
+      - mysql
