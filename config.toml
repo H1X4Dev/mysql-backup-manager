@@ -1,5 +1,5 @@
 [backup]
-basedir = ""
+basedir = "output"
 
 [mysql-r1]
 type = "MySQL"

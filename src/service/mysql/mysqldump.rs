@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use log::debug;
 use sqlx::mysql::MySqlConnectOptions;
 use sqlx::{MySqlPool, Row};
-use sqlx::types::chrono::Utc;
+use sqlx::types::chrono::{Local, Utc};
+use tokio::fs;
 use tokio::process::Command;
 use uuid::{NoContext, Timestamp, Uuid};
 use which::which;
@@ -42,6 +43,7 @@ impl MySqlDumpRunner for MySQLService {
             // Create new pool.
             let connection_config = MySqlConnectOptions::from_defaults_file(defaults_path)?;
             let pool = MySqlPool::connect_lazy_with(connection_config);
+            let current_date = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
 
             // Fetch the list of databases.
             let databases = if let Some(databases) = &config.databases {
@@ -66,7 +68,8 @@ impl MySqlDumpRunner for MySQLService {
                     // Fetch the table names for the database
                     sqlx::query(&format!("USE {}", database)).execute(&pool).await?;
                     let tables = sqlx::query("SHOW TABLES").fetch_all(&pool).await?;
-                    let temp_dir = PathBuf::from_str(&self.backup_config.basedir)?.join(database);
+                    let temp_dir = PathBuf::from_str(&self.backup_config.basedir)?.join(current_date.clone()).join(database);
+                    fs::create_dir_all(temp_dir.clone()).await?;
 
                     for table in tables {
                         let table_name: String = table.get(0);
@@ -95,7 +98,8 @@ impl MySqlDumpRunner for MySQLService {
                     debug!("Dumping database: {}", database);
 
                     // Create a result path, where the SQL will be dumped off to.
-                    let result_path = PathBuf::from_str(&self.backup_config.basedir)?.join(format!("{}.sql", database));
+                    fs::create_dir_all(self.backup_config.basedir.clone()).await?;
+                    let result_path = PathBuf::from_str(&self.backup_config.basedir)?.join(format!("{}-{}.sql", current_date, database));
 
                     // Create the command to dump the data.
                     let mut cmd = create_command(defaults_path, result_path.clone())?;

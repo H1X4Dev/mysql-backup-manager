@@ -3,6 +3,7 @@ use std::process::Stdio;
 use async_trait::async_trait;
 use log::debug;
 use sqlx::types::chrono::{Local, Utc};
+use tokio::fs;
 use tokio::process::Command;
 use uuid::{NoContext, Timestamp, Uuid};
 use which::which;
@@ -34,6 +35,7 @@ impl XtraBackupRunner for MySQLService {
             let current_date = Local::now().format("%Y-%m-%d").to_string();
             let mut target_dir = PathBuf::from(&self.backup_config.basedir);
             target_dir.push(current_date);
+            fs::create_dir_all(target_dir.clone()).await?;
             debug!("Backup base directory: {}", target_dir.to_str().unwrap());
 
             let command_path = which("xtrabackup")?;
