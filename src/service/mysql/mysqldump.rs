@@ -2,14 +2,18 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::str::FromStr;
 use async_trait::async_trait;
-use log::info;
+use log::debug;
 use sqlx::mysql::MySqlConnectOptions;
 use sqlx::{MySqlPool, Row};
+use sqlx::types::chrono::Utc;
 use tokio::process::Command;
+use uuid::{NoContext, Timestamp, Uuid};
 use which::which;
+use crate::DB_POOL;
 use crate::service::mysql::config::MySQLDumpConfig;
 use crate::service::mysql::mysql_defaults::MySqlDefaultsReader;
 use crate::service::mysql::mysql_service::MySQLService;
+use crate::utils::get_size;
 
 pub fn create_command(defaults_path: &Path, file_path: PathBuf) -> Result<Command, Box<dyn std::error::Error>> {
     let command_path = which("mysqldump")?;
@@ -24,6 +28,8 @@ pub fn create_command(defaults_path: &Path, file_path: PathBuf) -> Result<Comman
 #[async_trait]
 pub trait MySqlDumpRunner {
     async fn do_mysqldump(&self, mysql_config: &MySQLDumpConfig) -> Result<(), Box<dyn std::error::Error>>;
+
+    async fn save_backup(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 #[async_trait]
@@ -64,44 +70,67 @@ impl MySqlDumpRunner for MySQLService {
 
                     for table in tables {
                         let table_name: String = table.get(0);
-                        info!("Dumping table: {}.{}", database, table_name);
+                        debug!("Dumping table: {}.{}", database, table_name);
 
                         // Create a result path, where the SQL will be dumped off to.
                         let result_path = temp_dir.clone().join(format!("{}.{}.sql", database, table_name));
 
                         // Create the command to dump the data.
-                        let mut cmd = create_command(defaults_path, result_path)?;
+                        let mut cmd = create_command(defaults_path, result_path.clone())?;
                         cmd.arg(database);
                         cmd.arg(table_name);
 
                         // Run the command and expect output.
                         let status = cmd.stdout(Stdio::null()).status().await?;
                         if status.success() {
-                            info!("-> Dumped!");
+                            debug!("-> Dumped!");
+                            // Save it to database.
+                            self.save_backup(result_path.clone()).await?;
+
                         } else {
-                            info!("-> Failed to dump!");
+                            debug!("-> Failed to dump!");
                         }
                     }
                 } else {
-                    info!("Dumping database: {}", database);
+                    debug!("Dumping database: {}", database);
 
                     // Create a result path, where the SQL will be dumped off to.
                     let result_path = PathBuf::from_str(&self.backup_config.basedir)?.join(format!("{}.sql", database));
 
                     // Create the command to dump the data.
-                    let mut cmd = create_command(defaults_path, result_path)?;
+                    let mut cmd = create_command(defaults_path, result_path.clone())?;
                     cmd.arg(database);
 
                     // Run the command and expect output.
                     let status = cmd.stdout(Stdio::null()).status().await?;
                     if status.success() {
-                        info!("-> Dumped!");
+                        debug!("-> Dumped!");
+
+                        // Save it to database.
+                        self.save_backup(result_path.clone()).await?;
                     } else {
-                        info!("-> Failed to dump!");
+                        debug!("-> Failed to dump!");
                     }
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn save_backup(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        let uuid = Uuid::new_v7(Timestamp::now(NoContext));
+        let path_str = path.to_str().unwrap().to_string();
+        let size = get_size(path).unwrap() as i64;
+        let created_at = Utc::now().naive_utc();
+
+        sqlx::query("INSERT INTO backups (uuid, type, path, size, created_at) VALUES ($1, 0, $2, $3, $4)")
+            .bind(uuid)
+            .bind(path_str)
+            .bind(size)
+            .bind(created_at)
+            .execute(DB_POOL.get().unwrap())
+            .await?;
+
         Ok(())
     }
 }

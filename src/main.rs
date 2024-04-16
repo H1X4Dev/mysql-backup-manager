@@ -15,6 +15,7 @@ use tokio::sync::OnceCell;
 
 mod config;
 mod service;
+mod utils;
 
 const DB_URL: &str = "sqlite://sqlite.db?mode=rwc";
 static DB_POOL: OnceCell<Pool<Sqlite>> = OnceCell::const_new();

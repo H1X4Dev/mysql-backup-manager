@@ -9,6 +9,9 @@ pub struct MysqlBackupRow {
     #[sqlx(rename = "type")]
     pub backup_type: u8, // 0 = mysqlbackup, 1 = xtrabackup
     pub path: String,
-    pub size: u64,
+    pub size: i64,
     pub created_at: NaiveDateTime
+}
+
+impl MysqlBackupRow {
 }
