@@ -10,6 +10,7 @@ use crate::DB_POOL;
 use crate::service::mysql::config::XtraBackupConfig;
 use crate::service::mysql::database::MysqlBackupRow;
 use crate::service::mysql::mysql_service::MySQLService;
+use crate::utils::get_size;
 
 #[async_trait]
 pub trait XtraBackupRunner {
@@ -44,6 +45,12 @@ impl XtraBackupRunner for MySQLService {
             if let Some(parallel_threads) = mysql_config.parallel_threads {
                 cmd.arg(format!("--parallel={}", parallel_threads));
                 debug!("Will run the backup in parallel with {} threads.", parallel_threads);
+            }
+
+            // If we need to customize the amount of memory we can use
+            if let Some(use_memory) = mysql_config.use_memory {
+                cmd.arg(format!("--use-memory={}", use_memory));
+                debug!("Will use {} memory.", use_memory);
             }
 
             // Process the database exclusion.
@@ -92,7 +99,7 @@ impl XtraBackupRunner for MySQLService {
                 // Store it in the database.
                 {
                     let path_str = target_dir.to_str().unwrap();
-                    let size = 0;
+                    let size = get_size(target_dir.clone()).unwrap() as i64;
                     let created_at = Utc::now().naive_utc();
                     let result = sqlx::query("INSERT INTO backups (uuid, base_uuid, type, path, size, created_at) VALUES ($1, $2, 1, $4, $5, $6)")
                         .bind(backup_uuid)

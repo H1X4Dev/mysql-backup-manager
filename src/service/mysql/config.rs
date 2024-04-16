@@ -11,6 +11,7 @@ pub struct XtraBackupIncrementalConfig {
 pub struct XtraBackupConfig {
     pub incremental: Option<XtraBackupIncrementalConfig>,
     pub parallel_threads: Option<u8>,
+    pub use_memory: Option<u32>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
