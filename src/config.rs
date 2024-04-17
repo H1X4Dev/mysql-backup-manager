@@ -87,6 +87,7 @@ mod tests {
         let toml_str = r#"
 [backup]
 basedir = "/srv"
+keep_last = 7
 
 [mysql-r1]
 type = "MySQL"
@@ -100,7 +101,6 @@ type = "xtrabackup"
 parallel_threads = 16
 databases = ["auth", "wordpress"]
 interval = "* * * * *"
-keep_last = 7
 
 [mysql-r1.backup.incremental]
 enabled = true

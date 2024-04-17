@@ -68,8 +68,8 @@ impl XtraBackupRunner for MySQLService {
             }
 
             // Now if we are doing an incremental backup, we will want to handle it a little differently.
-            if let Some(incremental_config) = &mysql_config.incremental {
-                if incremental_config.enabled {
+            if let Some(incremental) = &mysql_config.incremental {
+                if incremental {
                     // Since we are creating an incremental backup, we just have to push the uuid into target directory.
                     target_dir.push(backup_uuid.to_string());
                     debug!("Target directory: {}", target_dir.to_str().unwrap());

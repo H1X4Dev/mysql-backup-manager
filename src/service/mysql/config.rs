@@ -1,14 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct XtraBackupIncrementalConfig {
-    pub enabled: bool,
-    pub basedir: String
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct XtraBackupConfig {
-    pub incremental: Option<XtraBackupIncrementalConfig>,
+    pub incremental: Option<bool>,
     pub parallel_threads: Option<u8>,
     pub use_memory: Option<u32>
 }
