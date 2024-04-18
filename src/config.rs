@@ -142,10 +142,7 @@ basedir = "/home"
                     defaults_file: None,
                     backup: Some(MySQLBackupConfig {
                         backup_type: MySQLBackupType::XtraBackup(XtraBackupConfig {
-                            incremental: Some(XtraBackupIncrementalConfig {
-                                enabled: true,
-                                basedir: "/home".to_string()
-                            }),
+                            incremental: Some(true),
                             parallel_threads: Some(16),
                             use_memory: None,
                         }),
